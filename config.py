@@ -26,6 +26,53 @@ class Config:
     # OS values to zero-fill
     os_values: List[str] = field(default_factory=lambda: ["ANDROID", "IOS"])
 
+    # Allowlisted event names (case-insensitive match)
+    allowed_events: List[str] = field(default_factory=lambda: [
+        "ny_app_started",
+        "ny_user_onboarded",
+        "ny_user_first_ride_completed",
+        "ny_rider_ride_completed",
+        "driver_assigned",
+        "app_remove",
+        "ny_user_source_and_destination",
+        "ny_user_request_quotes",
+        "notification_recieve",
+        "serviceTab_homeScreen",
+        "notification_open",
+        "ny_user_app_version",
+        "Metro_ticket_payment_successful",
+        "user_session_start",
+        "NEW_SIGNUP",
+        "end_ride_success",
+        "ny_driver_status_change",
+        "ride_cancelled",
+        "FIRST_RIDE_COMPLETED",
+        "btp_new_signup_del",
+        "btp_new_signup_ahm",
+        "btp_new_signup_noi",
+        "btp_new_signup_gur",
+        "btp_new_signup_sur",
+        "btp_new_signup_vad",
+        "mt_home_bus",
+        "mt_home_metro",
+        "mt_home_train",
+        "mt_home_search",
+        "NY_BUS_OTP_TYPED",
+        "NY_BUS_OTP_SCANNED",
+        "MT_JOURNEY_INFO_PAY",
+        "METRO_TICKET_PAYMENT_FAILED",
+        "ny_user_ride_started",
+        "ny_user_ride_assigned",
+        "ny_user_ride_completed",
+        "first_open",
+        "Odishauser_first_ride_completed",
+        "Yatriuser_first_ride_completed",
+        "keralaSavaariuser_first_ride_completed",
+        "ny_user_twostar_rating",
+        "ny_cab_firstride",
+        "ys_bike_firstride",
+    ])
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(

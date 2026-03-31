@@ -87,6 +87,7 @@ class EventStreamService:
         self.flush_thread: Optional[threading.Thread] = None
 
         self.clickhouse = CsvClient() if config.dry_run else ClickHouseClient(config)
+        self._allowed_events = {e.lower() for e in config.allowed_events}
 
         self.consumer = KafkaConsumer(
             config.kafka_topic,
@@ -119,6 +120,10 @@ class EventStreamService:
 
             # Skip empty or debug packages
             if not package_name or package_name.endswith(".debug"):
+                return
+
+            # Skip events not in the allowlist
+            if event_name.lower() not in self._allowed_events:
                 return
 
             with self.buffer_lock:
