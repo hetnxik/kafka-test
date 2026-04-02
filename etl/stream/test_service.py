@@ -214,6 +214,10 @@ class TestStreamService:
                 self._skip_count += 1
                 return
 
+            if not session_id or not user_id:
+                self._skip_count += 1
+                return
+
             with self.buffer_lock:
                 self.buffer.add(event_name, package_name, os, session_id, user_id, timestamp)
 
