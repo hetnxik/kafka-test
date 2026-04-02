@@ -1,10 +1,11 @@
 import csv
 import io
+import json
 import subprocess
 import logging
 from typing import List, Dict, Any
 
-from config import Config
+from .config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class ClickHouseClient:
 
     def batch_insert(self, records: List[Dict[str, Any]]) -> bool:
         if not records:
+            logger.debug("No records to insert")
             return True
 
         logger.info(f"Inserting {len(records)} records into {self.database}.{self.table}")

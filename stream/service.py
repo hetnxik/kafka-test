@@ -10,9 +10,8 @@ from typing import List, Dict, Any, Optional
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
 
-from config import Config
-from clickhouse import ClickHouseClient
-from csv_client import CsvClient
+from .config import Config
+from .clickhouse import ClickHouseClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,8 +85,7 @@ class EventStreamService:
         self.buffer_lock = threading.Lock()
         self.flush_thread: Optional[threading.Thread] = None
 
-        self.clickhouse = CsvClient() if config.dry_run else ClickHouseClient(config)
-        self._allowed_events = {e.lower() for e in config.allowed_events}
+        self.clickhouse = ClickHouseClient(config)
 
         self.consumer = KafkaConsumer(
             config.kafka_topic,
@@ -120,10 +118,6 @@ class EventStreamService:
 
             # Skip empty or debug packages
             if not package_name or package_name.endswith(".debug"):
-                return
-
-            # Skip events not in the allowlist
-            if event_name.lower() not in self._allowed_events:
                 return
 
             with self.buffer_lock:
@@ -202,6 +196,7 @@ class EventStreamService:
                             break
                         self._process_message(msg)
                 except StopIteration:
+                    # consumer_timeout_ms reached, loop again
                     pass
                 except KafkaError as e:
                     logger.error(f"Kafka error: {e}, retrying...")

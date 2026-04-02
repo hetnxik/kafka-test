@@ -1,89 +1,88 @@
-import os
-from dataclasses import dataclass, field
-from typing import List
+"""Configuration for CSV ETL pipeline."""
 
+DUMP_DIR = "data"
+OUTPUT_DIR = "output"
+CHUNK_SIZE = 5000000  # Larger chunks for better throughput with vectorized ops
 
-@dataclass
-class Config:
-    # Kafka
-    kafka_brokers: str = "logs-cluster-kafka-bootstrap.kafka-cluster.svc:9092"
-    kafka_topic: str = "events"
-    kafka_group_id: str = "journey-aggregate"
+# Package name constants by category
+_CUST = [
+    "in.juspay.nammayatri",
+    "in.juspay.jatrisaathi",
+    "in.mobility.odishayatri",
+    "in.mobility.keralasavaariconsumer",
+]
+_DRV = [
+    "in.juspay.nammayatripartner",
+    "in.juspay.jatrisaathidriver",
+    "in.mobility.odishayatripartner",
+    "in.mobility.manayatripartner",
+    "net.openkochi.yatripartner",
+    "in.mobility.keralasavaari",
+]
+_CHN = ["in.mobility.cumta"]
+_BTC = ["in.mobility.bharatTaxi"]
+_BTD = ["in.mobility.bharattaxidriver"]
 
-    # ClickHouse
-    clickhouse_host: str = "10.6.155.14"
-    clickhouse_user: str = ""
-    clickhouse_password: str = ""
-    clickhouse_database: str = "atlas_kafka"
-    clickhouse_table: str = "event_counts_hourly"
+# Mapping: event_name -> list of package_names it applies to
+# Drives zero-fill only (ensures every combo appears in output even with 0 counts)
+EVENT_PACKAGE_MAPPING = {
+    # --- NY, OY, YS, KS Customer Events ---
+    "ny_rider_ride_completed":          _CUST,
+    "app_remove":                       _CUST + _DRV + _BTC + _BTD,
+    "ny_user_ride_started":             _CUST,
+    "ny_user_request_quotes":           _CUST + _BTC,
+    "ny_user_source_and_destination":   _CUST + _BTC,
+    "ny_user_ride_assigned":            _CUST,
+    "ny_user_ride_completed":           _CUST,
+    "first_open":                       _CUST,
+    "ny_user_twostar_rating":           _CUST,
+    "ny_user_onboarded":                _CUST + _BTC,
+    "ny_cab_firstride":                 _CUST,
+    # NY only
+    "ny_user_first_ride_completed":     ["in.juspay.nammayatri"] + _BTC,
+    "Metro_ticket_payment_successful":  ["in.juspay.nammayatri"] + _BTC,
+    # OS only
+    "Odishauser_first_ride_completed":  ["in.mobility.odishayatri"],
+    # YS only
+    "Yatriuser_first_ride_completed":   ["in.juspay.jatrisaathi"],
+    "ys_bike_firstride":                ["in.juspay.jatrisaathi"],
+    # KS only
+    "keralaSavaariuser_first_ride_completed": ["in.mobility.keralasavaariconsumer"],
+    # CO (Chennai One customer-side)
+    "mt_home_train":                    _CHN,
+    "mt_journey_info_pay":              _CHN,
+    "mt_home_metro":                    _CHN,
+    "mt_home_bus":                      _CHN,
 
-    # Window
-    flush_interval_seconds: int = 300  # 5 minutes
+    # --- NY, OY, YS, KS Driver Events ---
+    "user_session_start":               _DRV + _BTD,
+    "NEW_SIGNUP":                       _DRV + _BTD,
+    "end_ride_success":                 _DRV + _BTD,
+    "notification_open":                _DRV + _BTC + _BTD,
+    "ny_user_app_version":              _CUST + _DRV + _CHN + _BTC + _BTD,
+    "ny_driver_status_change":          _DRV + _BTD,
+    "ride_cancelled":                   _DRV + _BTD,
+    "FIRST_RIDE_COMPLETED":             _DRV + _BTD,
 
-    # Dry run
-    dry_run: bool = False
+    # --- Chennai One ---
+    "mt_home_search":                   _CHN,
+    "NY_BUS_OTP_TYPED":                 _CHN,
+    "NY_BUS_OTP_SCANNED":               _CHN,
+    "MT_JOURNEY_INFO_PAY":              _CHN,
+    "METRO_TICKET_PAYMENT_FAILED":      _CHN,
+    "METRO_TICKET_PAYMENT_SUCCESSFUL":  _CHN,
 
-    # OS values to zero-fill
-    os_values: List[str] = field(default_factory=lambda: ["ANDROID", "IOS"])
+    # --- Bharat Taxi Customer ---
+    "ny_app_started":                   _CUST + _CHN + _BTC,
+    "driver_assigned":                  _DRV + _BTD,
+    "notification_recieve":             _BTC,
+    "serviceTab_homeScreen":            _CUST + _CHN + _BTC,
 
-    # Allowlisted event names (case-insensitive match)
-    allowed_events: List[str] = field(default_factory=lambda: [
-        "ny_app_started",
-        "ny_user_onboarded",
-        "ny_user_first_ride_completed",
-        "ny_rider_ride_completed",
-        "driver_assigned",
-        "app_remove",
-        "ny_user_source_and_destination",
-        "ny_user_request_quotes",
-        "notification_recieve",
-        "serviceTab_homeScreen",
-        "notification_open",
-        "ny_user_app_version",
-        "Metro_ticket_payment_successful",
-        "user_session_start",
-        "NEW_SIGNUP",
-        "end_ride_success",
-        "ny_driver_status_change",
-        "ride_cancelled",
-        "FIRST_RIDE_COMPLETED",
-        "btp_new_signup_del",
-        "btp_new_signup_ahm",
-        "btp_new_signup_noi",
-        "btp_new_signup_gur",
-        "btp_new_signup_sur",
-        "btp_new_signup_vad",
-        "mt_home_bus",
-        "mt_home_metro",
-        "mt_home_train",
-        "mt_home_search",
-        "NY_BUS_OTP_TYPED",
-        "NY_BUS_OTP_SCANNED",
-        "MT_JOURNEY_INFO_PAY",
-        "METRO_TICKET_PAYMENT_FAILED",
-        "ny_user_ride_started",
-        "ny_user_ride_assigned",
-        "ny_user_ride_completed",
-        "first_open",
-        "Odishauser_first_ride_completed",
-        "Yatriuser_first_ride_completed",
-        "keralaSavaariuser_first_ride_completed",
-        "ny_user_twostar_rating",
-        "ny_cab_firstride",
-        "ys_bike_firstride",
-    ])
-
-    @classmethod
-    def from_env(cls) -> "Config":
-        return cls(
-            kafka_brokers=os.getenv("KAFKA_BROKERS", cls.kafka_brokers),
-            kafka_topic=os.getenv("KAFKA_TOPIC", cls.kafka_topic),
-            kafka_group_id=os.getenv("KAFKA_GROUP_ID", cls.kafka_group_id),
-            clickhouse_host=os.getenv("CKH_HOST", cls.clickhouse_host),
-            clickhouse_user=os.getenv("CKH_USER", cls.clickhouse_user),
-            clickhouse_password=os.getenv("CKH_PASSWORD", cls.clickhouse_password),
-            clickhouse_database=os.getenv("CKH_DATABASE", cls.clickhouse_database),
-            clickhouse_table=os.getenv("CKH_TABLE", cls.clickhouse_table),
-            flush_interval_seconds=int(os.getenv("FLUSH_INTERVAL_SECONDS", str(cls.flush_interval_seconds))),
-            dry_run=os.getenv("DRY_RUN", "").lower() in ("1", "true", "yes"),
-        )
+    # --- Bharat Taxi Driver ---
+    "btp_new_signup_del":               _BTD,
+    "btp_new_signup_ahm":               _BTD,
+    "btp_new_signup_noi":               _BTD,
+    "btp_new_signup_gur":               _BTD,
+    "btp_new_signup_sur":               _BTD,
+    "btp_new_signup_vad":               _BTD,
+}
