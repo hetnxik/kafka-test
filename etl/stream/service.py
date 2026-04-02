@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class WindowBuffer:
-    """Accumulates event counts for the current 60-min window."""
+    """Accumulates event counts for the current flush window."""
 
     def __init__(self, os_values: List[str]):
         self.os_values = os_values
@@ -36,6 +36,7 @@ class WindowBuffer:
         try:
             dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         except Exception:
+            logger.warning(f"Unparseable timestamp {timestamp!r}, using current UTC time")
             dt = datetime.now(timezone.utc)
 
         date = str(dt.date())
@@ -90,12 +91,29 @@ class WindowBuffer:
 
         return records
 
+    def stats(self) -> Dict[str, int]:
+        unique_events = len({k[2] for k in self.counts})
+        unique_packages = len({k[3] for k in self.counts})
+        total_events = sum(self.counts.values())
+        unique_sessions = len({s for ss in self.sessions.values() for s in ss})
+        unique_users = len({u for us in self.users.values() for u in us})
+        return {
+            "buffered_events": total_events,
+            "unique_event_types": unique_events,
+            "unique_packages": unique_packages,
+            "unique_sessions": unique_sessions,
+            "unique_users": unique_users,
+        }
+
     def is_empty(self) -> bool:
         return len(self.counts) == 0
 
 
 class EventStreamService:
-    """Kafka consumer that aggregates events into 60-min windows and flushes to ClickHouse."""
+    """Kafka consumer that aggregates events into time windows and flushes to CSV."""
+
+    # Log a throughput summary every N messages
+    _LOG_EVERY = 1000
 
     def __init__(self, config: Config):
         self.config = config
@@ -104,8 +122,14 @@ class EventStreamService:
         self.buffer_lock = threading.Lock()
         self.flush_thread: Optional[threading.Thread] = None
 
-        self.clickhouse = ClickHouseClient(config)
+        self._msg_count = 0          # total messages processed
+        self._skip_count = 0         # messages skipped (debug/empty package)
+        self._error_count = 0        # parse errors
 
+        self.sink = ClickHouseClient(config)
+
+        logger.info("Connecting to Kafka — brokers=%s  topic=%s  group=%s",
+                    config.kafka_brokers, config.kafka_topic, config.kafka_group_id)
         self.consumer = KafkaConsumer(
             config.kafka_topic,
             bootstrap_servers=config.kafka_brokers,
@@ -124,6 +148,7 @@ class EventStreamService:
         try:
             value = msg.value
             if not value:
+                self._skip_count += 1
                 return
 
             data = json.loads(value.decode("utf-8"))
@@ -137,49 +162,81 @@ class EventStreamService:
 
             # Skip empty or debug packages
             if not package_name or package_name.endswith(".debug"):
+                self._skip_count += 1
                 return
+
+            if not event_name:
+                logger.warning("Message missing event_name — partition=%d offset=%d",
+                               msg.partition, msg.offset)
+
+            if not session_id or not user_id:
+                logger.warning("Message missing session_id/user_id — event=%s package=%s "
+                               "partition=%d offset=%d",
+                               event_name, package_name, msg.partition, msg.offset)
 
             with self.buffer_lock:
                 self.buffer.add(event_name, package_name, os, session_id, user_id, timestamp)
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse message: {e}")
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            self._msg_count += 1
+            if self._msg_count % self._LOG_EVERY == 0:
+                with self.buffer_lock:
+                    stats = self.buffer.stats()
+                logger.info(
+                    "Throughput — processed=%d  skipped=%d  errors=%d  |  "
+                    "buffer: events=%d types=%d packages=%d sessions=%d users=%d",
+                    self._msg_count, self._skip_count, self._error_count,
+                    stats["buffered_events"], stats["unique_event_types"],
+                    stats["unique_packages"], stats["unique_sessions"], stats["unique_users"],
+                )
 
-    def _flush_to_clickhouse(self) -> bool:
+        except json.JSONDecodeError as e:
+            self._error_count += 1
+            logger.error("JSON parse error — partition=%d offset=%d error=%s",
+                         msg.partition, msg.offset, e)
+        except Exception as e:
+            self._error_count += 1
+            logger.error("Error processing message — partition=%d offset=%d error=%s",
+                         msg.partition, msg.offset, e)
+
+    def _flush(self) -> bool:
         with self.buffer_lock:
             if self.buffer.is_empty():
-                logger.info("Buffer empty, nothing to flush")
+                logger.info("Flush triggered — buffer is empty, nothing to write")
                 return True
+            stats = self.buffer.stats()
             records = self.buffer.flush()
 
-        logger.info(f"Flushing {len(records)} records to ClickHouse")
+        logger.info(
+            "Flushing — records=%d  event_types=%d  packages=%d  sessions=%d  users=%d",
+            len(records), stats["unique_event_types"], stats["unique_packages"],
+            stats["unique_sessions"], stats["unique_users"],
+        )
 
         max_retries = 3
         for attempt in range(max_retries):
-            if self.clickhouse.batch_insert(records):
+            if self.sink.batch_insert(records):
                 try:
                     self.consumer.commit()
-                    logger.info(f"Flushed {len(records)} records and committed offsets")
+                    logger.info("Flush complete — wrote %d records, offsets committed", len(records))
                     return True
                 except Exception as e:
-                    logger.error(f"Failed to commit offsets: {e}")
+                    logger.error("Flush succeeded but offset commit failed: %s", e)
                     return False
 
             if attempt < max_retries - 1:
                 delay = 2 ** attempt
-                logger.warning(f"Insert failed, retrying in {delay}s ({attempt + 2}/{max_retries})")
+                logger.warning("Write failed — retrying in %ds (%d/%d)", delay, attempt + 2, max_retries)
                 time.sleep(delay)
 
-        logger.error(f"Failed to insert after {max_retries} attempts")
+        logger.error("Flush failed after %d attempts — %d records lost", max_retries, len(records))
         return False
 
     def _flush_loop(self) -> None:
-        logger.info("Flush thread started")
+        logger.info("Flush thread started — interval=%ds", self.config.flush_interval_seconds)
         while self.running:
             sleep_time = self._calculate_next_flush_time()
-            logger.debug(f"Next flush in {sleep_time:.1f}s")
+            next_flush = datetime.now(timezone.utc).strftime("%H:%M:%S")
+            logger.info("Next flush in %.0fs (at ~%s UTC)", sleep_time, next_flush)
 
             while sleep_time > 0 and self.running:
                 time.sleep(min(sleep_time, 1.0))
@@ -189,20 +246,24 @@ class EventStreamService:
                 break
 
             try:
-                self._flush_to_clickhouse()
+                self._flush()
             except Exception as e:
-                logger.error(f"Error in flush loop: {e}")
+                logger.error("Unexpected error in flush loop: %s", e)
 
         logger.info("Flush thread stopped")
 
     def start(self) -> None:
-        logger.info("Starting Event Stream Service")
+        logger.info(
+            "Starting Event Stream Service — topic=%s  flush_interval=%ds  output=%s",
+            self.config.kafka_topic, self.config.flush_interval_seconds, self.config.output_path,
+        )
 
-        if not self.clickhouse.test_connection():
-            logger.error("ClickHouse connection failed, exiting")
+        if not self.sink.test_connection():
+            logger.error("Output sink unavailable, exiting")
             sys.exit(1)
 
-        logger.info(f"Subscribed to topic: {self.config.kafka_topic}")
+        logger.info("Output sink ready — writing to %s", self.config.output_path)
+        logger.info("Subscribed to Kafka topic: %s", self.config.kafka_topic)
 
         self.flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
         self.flush_thread.start()
@@ -215,28 +276,29 @@ class EventStreamService:
                             break
                         self._process_message(msg)
                 except StopIteration:
-                    # consumer_timeout_ms reached, loop again
+                    # consumer_timeout_ms reached — normal, keep looping
                     pass
                 except KafkaError as e:
-                    logger.error(f"Kafka error: {e}, retrying...")
+                    logger.error("Kafka error: %s — retrying in 1s", e)
                     time.sleep(1)
 
         except KeyboardInterrupt:
-            logger.info("Interrupted")
+            logger.info("Interrupted by user")
         except Exception as e:
-            logger.error(f"Fatal error: {e}")
+            logger.error("Fatal error: %s", e)
         finally:
             self.shutdown()
 
     def shutdown(self) -> None:
-        logger.info("Shutting down...")
+        logger.info("Shutting down — processed=%d  skipped=%d  errors=%d",
+                    self._msg_count, self._skip_count, self._error_count)
         self.running = False
 
-        logger.info("Final flush...")
+        logger.info("Running final flush...")
         try:
-            self._flush_to_clickhouse()
+            self._flush()
         except Exception as e:
-            logger.error(f"Error during final flush: {e}")
+            logger.error("Error during final flush: %s", e)
 
         if self.flush_thread and self.flush_thread.is_alive():
             self.flush_thread.join(timeout=10)
