@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 
 class ClickHouseClient:
     COLUMNS = [
-        "date", "hour_of_day", "event_name", "package_name",
-        "os", "event_count", "session_count", "user_count",
+        "date", "hour_of_day", "event_name", "package_name", "os",
+        "event_count", "session_count", "user_count",
+        "overflow_session_count", "non_overflow_session_count",
+        "overflow_user_count", "non_overflow_user_count",
     ]
 
     def __init__(self, config: Config):

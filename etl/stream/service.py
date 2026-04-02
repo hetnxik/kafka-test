@@ -21,13 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 class WindowBuffer:
-    """Accumulates event counts for the current 5-min window."""
+    """Accumulates event counts for the current 60-min window."""
 
     def __init__(self, os_values: List[str]):
         self.os_values = os_values
         self.counts: Dict = defaultdict(int)
         self.sessions: Dict = defaultdict(set)
         self.users: Dict = defaultdict(set)
+        self.prev_hour_sessions: set = set()
+        self.prev_hour_users: set = set()
 
     def add(self, event_name: str, package_name: str, os: str,
             session_id: str, user_id: str, timestamp: str) -> None:
@@ -50,10 +52,19 @@ class WindowBuffer:
         for (date, hour_of_day, event_name, package_name, os) in self.counts:
             seen.add((date, hour_of_day, event_name, package_name))
 
+        curr_all_sessions: set = set()
+        curr_all_users: set = set()
+
         records = []
         for (date, hour_of_day, event_name, package_name) in seen:
             for os in self.os_values:
                 key = (date, hour_of_day, event_name, package_name, os)
+                curr_sess = self.sessions.get(key, set())
+                curr_user = self.users.get(key, set())
+
+                curr_all_sessions.update(curr_sess)
+                curr_all_users.update(curr_user)
+
                 records.append({
                     "date": date,
                     "hour_of_day": hour_of_day,
@@ -61,9 +72,17 @@ class WindowBuffer:
                     "package_name": package_name,
                     "os": os,
                     "event_count": self.counts.get(key, 0),
-                    "session_count": len(self.sessions.get(key, set())),
-                    "user_count": len(self.users.get(key, set())),
+                    "session_count": len(curr_sess),
+                    "user_count": len(curr_user),
+                    "overflow_session_count": len(curr_sess & self.prev_hour_sessions),
+                    "non_overflow_session_count": len(curr_sess - self.prev_hour_sessions),
+                    "overflow_user_count": len(curr_user & self.prev_hour_users),
+                    "non_overflow_user_count": len(curr_user - self.prev_hour_users),
                 })
+
+        # Rotate: current hour becomes previous hour for next flush
+        self.prev_hour_sessions = curr_all_sessions
+        self.prev_hour_users = curr_all_users
 
         self.counts.clear()
         self.sessions.clear()
@@ -76,7 +95,7 @@ class WindowBuffer:
 
 
 class EventStreamService:
-    """Kafka consumer that aggregates events into 5-min windows and flushes to ClickHouse."""
+    """Kafka consumer that aggregates events into 60-min windows and flushes to ClickHouse."""
 
     def __init__(self, config: Config):
         self.config = config
