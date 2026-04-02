@@ -34,9 +34,15 @@ class WindowBuffer:
     def add(self, event_name: str, package_name: str, os: str,
             session_id: str, user_id: str, timestamp: str) -> None:
         try:
-            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            ts = timestamp.strip()
+            if ts.isdigit():
+                epoch = int(ts)
+                # Milliseconds if 13 digits, seconds otherwise
+                dt = datetime.fromtimestamp(epoch / 1000 if epoch > 1e10 else epoch, tz=timezone.utc)
+            else:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except Exception:
-            logger.warning(f"Unparseable timestamp {timestamp!r}, using current UTC time")
+            logger.warning("Unparseable timestamp %r, using current UTC time", timestamp)
             dt = datetime.now(timezone.utc)
 
         date = str(dt.date())
