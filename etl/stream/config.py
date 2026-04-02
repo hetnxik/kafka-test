@@ -17,6 +17,9 @@ class Config:
     clickhouse_database: str = "atlas_kafka"
     clickhouse_table: str = "event_counts_hourly"
 
+    # Output
+    output_path: str = "output/event_counts.csv"
+
     # Window
     flush_interval_seconds: int = 300  # 5 minutes
 
@@ -34,5 +37,6 @@ class Config:
             clickhouse_password=os.getenv("CKH_PASSWORD", cls.clickhouse_password),
             clickhouse_database=os.getenv("CLICKHOUSE_DATABASE", cls.clickhouse_database),
             clickhouse_table=os.getenv("CKH_TABLE", cls.clickhouse_table),
+            output_path=os.getenv("OUTPUT_PATH", cls.output_path),
             flush_interval_seconds=int(os.getenv("FLUSH_INTERVAL_SECONDS", str(cls.flush_interval_seconds))),
         )
