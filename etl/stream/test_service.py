@@ -210,6 +210,9 @@ class TestStreamService:
             if not package_name or package_name.endswith(".debug"):
                 self._skip_count += 1
                 return
+            if not event_name or not os or not timestamp:
+                self._skip_count += 1
+                return
 
             with self.buffer_lock:
                 self.buffer.add(event_name, package_name, os, session_id, user_id, timestamp)

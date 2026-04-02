@@ -169,14 +169,13 @@ class EventStreamService:
             user_id = data.get("user_id", "")
             timestamp = data.get("timestamp", "")
 
-            # Skip empty or debug packages
+            # Skip messages with missing required fields
             if not package_name or package_name.endswith(".debug"):
                 self._skip_count += 1
                 return
-
-            if not event_name:
-                logger.warning("Message missing event_name — partition=%d offset=%d",
-                               msg.partition, msg.offset)
+            if not event_name or not os or not timestamp:
+                self._skip_count += 1
+                return
 
             if not session_id or not user_id:
                 logger.warning("Message missing session_id/user_id — event=%s package=%s "
