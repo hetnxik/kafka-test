@@ -1,7 +1,6 @@
 """Build hourly aggregates and event transitions from event chunks."""
 from collections import defaultdict
 import pandas as pd
-import polars as pl
 
 
 class Aggregator:
@@ -39,20 +38,14 @@ class Aggregator:
             self.hourly[key]['sessions'].update(group['session_id'])
             self.hourly[key]['users'].update(group['user_id'])
 
-        # --- Fast transitions using polars ---
-        pdf = df[['session_id', 'timestamp', 'hour', 'event_name']].copy()
-        plf = pl.from_pandas(pdf)
-        plf = plf.sort(['session_id', 'timestamp'])
-        plf = plf.with_columns([
-            pl.col('event_name').shift(1).over('session_id').alias('prev_event'),
-            pl.col('hour').shift(1).over('session_id').alias('prev_hour'),
-            pl.col('session_id').shift(1).over('session_id').alias('prev_session')
-        ])
+        # --- Transitions ---
+        pdf = df[['session_id', 'timestamp', 'hour', 'event_name']].sort_values(
+            ['session_id', 'timestamp']
+        )
+        pdf['prev_event'] = pdf.groupby('session_id')['event_name'].shift(1)
+        pdf['prev_hour'] = pdf.groupby('session_id')['hour'].shift(1)
 
-        trans_df = plf.filter(
-            pl.col('prev_session') == pl.col('session_id')
-        ).select(['prev_hour', 'prev_event', 'event_name']).to_pandas()
-
+        trans_df = pdf.dropna(subset=['prev_event'])
         for _, row in trans_df.iterrows():
             self.transitions[(row['prev_hour'], row['prev_event'], row['event_name'])] += 1
 
