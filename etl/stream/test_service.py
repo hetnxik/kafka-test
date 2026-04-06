@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 COLUMNS = [
     "date_hour", "minute_bucket", "event_name", "package_name", "os",
-    "event_count", "session_count", "user_count",
+    "event_count",
     "overflow_session_count", "non_overflow_session_count",
     "overflow_user_count", "non_overflow_user_count",
 ]
@@ -104,8 +104,6 @@ class FineGrainBuffer:
                     "package_name": package_name,
                     "os": os,
                     "event_count": self.counts.get(key, 0),
-                    "session_count": len(curr_sess),
-                    "user_count": len(curr_user),
                     "overflow_session_count": len(curr_sess & prev_sess),
                     "non_overflow_session_count": len(curr_sess - prev_sess),
                     "overflow_user_count": len(curr_user & prev_user),

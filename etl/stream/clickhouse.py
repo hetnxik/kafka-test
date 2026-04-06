@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Must match the schema of the target table (see schema.sql).
 COLUMNS = [
     "date", "hour_of_day", "event_name", "package_name", "os",
-    "event_count", "session_count", "user_count",
+    "event_count",
     "overflow_session_count", "non_overflow_session_count",
     "overflow_user_count", "non_overflow_user_count",
 ]

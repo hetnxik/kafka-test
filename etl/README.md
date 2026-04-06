@@ -72,8 +72,6 @@ CREATE TABLE event_counts_hourly (
     package_name                String,
     os                          String,
     event_count                 UInt64,
-    session_count               UInt64,
-    user_count                  UInt64,
     overflow_session_count      UInt64,
     non_overflow_session_count  UInt64,
     overflow_user_count         UInt64,

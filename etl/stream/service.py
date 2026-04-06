@@ -110,8 +110,6 @@ class WindowBuffer:
                     "package_name": package_name,
                     "os": os,
                     "event_count": self.counts.get(key, 0),
-                    "session_count": len(curr_sess),
-                    "user_count": len(curr_user),
                     # Intersection with previous hour = carried-over sessions/users
                     "overflow_session_count": len(curr_sess & prev_sess),
                     "non_overflow_session_count": len(curr_sess - prev_sess),
