@@ -26,10 +26,10 @@ class Config:
     output_path: str = "output/event_counts.csv"
 
     # --- Window ---
-    # How often (in seconds) the in-memory buffer is flushed to the output sink.
-    # Default is 5 minutes (300s). Aggregation keys are by clock hour, not flush window,
-    # so multiple flushes within the same hour append rows for the same hour.
-    flush_interval_seconds: int = 300
+    # How often (in seconds) the in-memory buffer is flushed to ClickHouse.
+    # Default is 1 hour (3600s), aligned with the aggregation key (clock hour).
+    # One flush per hour means each (date, hour, event, package, os) key is written once.
+    flush_interval_seconds: int = 3600
 
     # OS values used for zero-filling: every (event, package) combo will have a row
     # for each OS even if no events were seen for that OS in the window.
